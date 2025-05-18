@@ -6,11 +6,20 @@
 # For more information, please refer to <http://unlicense.org/>
 #########################
 
-TWITTER_USERNAME="$1"
-WEBHOOK_URL="$2"
+# env vars or default to args
+TWITTER_USERNAME="${TWITTER_USERNAME:-$1}"
+WEBHOOK_URL="${WEBHOOK_URL:-$2}"
+FILTER_SELF_RETWEETS="${FILTER_SELF_RETWEETS:-0}"
 
 if [[ -z "$WEBHOOK_URL" ]] || [[ -z "$TWITTER_USERNAME" ]] ; then
-    echo "Usage: $0 <twitter_username> <discord_webhook_url>"
+    echo "Usage can be via env vars or args."
+    echo "Arguments:"
+    echo "$0 <twitter_username> <discord_webhook_url>"
+    echo ""
+    echo "Environment variables:"
+    echo "  TWITTER_USERNAME: Twitter username to fetch tweets from"
+    echo "  WEBHOOK_URL: Discord webhook URL to send tweets to"
+    echo "  FILTER_SELF_RETWEETS: Do not post self retweets (default: 0)"
     exit 1
 fi
 
@@ -67,8 +76,17 @@ check_posts() {
 
     # Get all tweets after last tweet id
     if [ "$_post_count" -gt 0 ]; then
-        # Get tweet IDs coming after last tweet,
-        _post_ids=$(echo "$_posts" | jq -r --arg last_id "$_last_id" 'select(.tweetID > $last_id) | .tweetID')
+        # Get tweet IDs coming after last tweet
+        _posts_filtered=$(echo "$_posts" | jq -r --arg last_id "$_last_id" 'select(.tweetID > $last_id)')
+
+        # filter out self retweets
+        if [ "$FILTER_SELF_RETWEETS" -eq 1 ]; then
+            echo "Filtering out self retweets..."
+            _posts_filtered=$(echo "$_posts_filtered" | jq -r --arg username "$TWITTER_USERNAME" 'select(.text | test("^RT @(?i)\($username)") | not)')
+        fi
+
+        _post_ids=$(echo "$_posts_filtered" | jq -r '.tweetID') 
+        
         if [ -z "$_post_ids" ]; then
             echo "No new posts found."
             exit 0
